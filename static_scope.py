@@ -1,12 +1,15 @@
 from scope_ast import *
 import z3
 
+
 class Closure:
     """Captures the definition-time environment for static scoping."""
-    def __init__(self, param, body, env):
-        self.param = param
+
+    def __init__(self, params, body, env):
+        self.params = params
         self.body = body
         self.env = env
+
 
 class StaticScopeExecutor:
     def __init__(self):
@@ -51,20 +54,26 @@ class StaticScopeExecutor:
                 if isinstance(closure, Closure):
                     # Evaluate all arguments first
                     arg_vals = [self.execute(arg) for arg in node.args]
-                    
+
                     old_env = self.environment
                     self.environment = closure.env.copy()
                     # Bind all parameters
                     for param, val in zip(closure.params, arg_vals):
                         self.environment[param] = val
-                        
+
                     result = self.execute(closure.body)
                     self.environment = old_env
                     return result
 
     def _evaluate_binop(self, operator, left, right):
-        if operator == '+': return left + right
-        if operator == '-': return left - right
-        if operator == '*': return left * right
-        if operator == '/': return left / right
+        if not z3.is_expr(left) or not z3.is_expr(right):
+            raise TypeError(f"BinOp operands must be z3 expressions, got {type(left)}, {type(right)}")
+        if operator == '+':
+            return left + right
+        if operator == '-':
+            return left - right
+        if operator == '*':
+            return left * right
+        if operator == '/':
+            return left / right
         raise ValueError(f"Unknown operator {operator}")

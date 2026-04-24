@@ -7,7 +7,7 @@ import z3
 # Then it redefines x=20 and calls f.
 code = """
 (let x 10
-  (let f (lambda y (+ x y))
+  (let f (lambda (y) (+ x y))
     (let x 20
       (apply f 5))))
 """
@@ -15,7 +15,7 @@ code = """
 ast = parse(code)
 static_res = StaticScopeExecutor().execute(ast)
 # Static: f captured x=10. Result: 10 + 5 = 15
-print(f"Static Result: {static_res}") 
+print(f"Static Result: {static_res}")
 
 dyn_res = DynamicScopeExecutor().execute(ast)
 # Dynamic: f looks at current stack where x=20. Result: 20 + 5 = 25

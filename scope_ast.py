@@ -1,16 +1,20 @@
 import re
 from typing import List
 
+
 class ASTNode:
     pass
+
 
 class Int(ASTNode):
     def __init__(self, value: int) -> None:
         self.value: int = value
 
+
 class Var(ASTNode):
     def __init__(self, name: str) -> None:
         self.name: str = name
+
 
 class Let(ASTNode):
     def __init__(self, name: str, value: ASTNode, body: ASTNode) -> None:
@@ -18,11 +22,13 @@ class Let(ASTNode):
         self.value: ASTNode = value
         self.body: ASTNode = body
 
+
 class If(ASTNode):
     def __init__(self, condition: ASTNode, then_branch: ASTNode, else_branch: ASTNode) -> None:
         self.condition: ASTNode = condition
         self.then_branch: ASTNode = then_branch
         self.else_branch: ASTNode = else_branch
+
 
 class BinOp(ASTNode):
     def __init__(self, left: ASTNode, operator: str, right: ASTNode) -> None:
@@ -30,15 +36,18 @@ class BinOp(ASTNode):
         self.operator: str = operator
         self.right: ASTNode = right
 
+
 class Lambda(ASTNode):
     def __init__(self, params: list[str], body: ASTNode):
         self.params = params
         self.body = body
 
+
 class Apply(ASTNode):
     def __init__(self, func: ASTNode, args: list[ASTNode]):
         self.func = func
         self.args = args
+
 
 class Parser:
     def __init__(self, tokens: List[str]) -> None:
@@ -48,7 +57,7 @@ class Parser:
     def parse(self) -> ASTNode:
         if self.position >= len(self.tokens):
             raise SyntaxError("Unexpected end of input")
-        
+
         token = self.tokens[self.position]
         self.position += 1
 
@@ -64,7 +73,7 @@ class Parser:
     def parse_list(self) -> ASTNode:
         if self.position >= len(self.tokens):
             raise SyntaxError("Unexpected end of input")
-        
+
         start_token = self.tokens[self.position]
         self.position += 1
 
@@ -84,17 +93,23 @@ class Parser:
             return If(condition, then_branch, else_branch)
 
         elif start_token == "lambda":
-            param = self.tokens[self.position]
-            self.position += 1
+            self.consume("(")
+            params = []
+            while self.tokens[self.position] != ")":
+                params.append(self.tokens[self.position])
+                self.position += 1
+            self.consume(")")
             body = self.parse()
             self.consume(")")
-            return Lambda(param, body)
+            return Lambda(params, body)
 
         elif start_token == "apply":
             func = self.parse()
-            arg = self.parse()
+            args = []
+            while self.tokens[self.position] != ")":
+                args.append(self.parse())
             self.consume(")")
-            return Apply(func, arg)
+            return Apply(func, args)
 
         elif start_token in {"+", "-", "*", "/"}:
             left = self.parse()
@@ -110,10 +125,34 @@ class Parser:
             raise SyntaxError(f"Expected '{expected_token}'")
         self.position += 1
 
+
 def tokenize(src: str) -> List[str]:
     return re.findall(r"[()]|[a-zA-Z_]\w*|[+-/*=<>!?]+|\d+", src)
+
 
 def parse(src: str) -> ASTNode:
     tokens = tokenize(src)
     parser = Parser(tokens)
     return parser.parse()
+
+
+def pretty_print(node: ASTNode) -> str:
+    match node:
+        case Int():
+            return str(node.value)
+        case Var():
+            return node.name
+        case BinOp():
+            return f"({node.operator} {pretty_print(node.left)} {pretty_print(node.right)})"
+        case Let():
+            return f"(let {node.name} {pretty_print(node.value)}\n  {pretty_print(node.body)})"
+        case If():
+            return f"(if {pretty_print(node.condition)}\n  {pretty_print(node.then_branch)}\n  {pretty_print(node.else_branch)})"
+        case Lambda():
+            params = " ".join(node.params)
+            return f"(lambda ({params}) {pretty_print(node.body)})"
+        case Apply():
+            args = " ".join(pretty_print(a) for a in node.args)
+            return f"(apply {pretty_print(node.func)} {args})"
+        case _:
+            return f"<unknown node: {type(node).__name__}>"
