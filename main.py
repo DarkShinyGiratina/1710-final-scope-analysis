@@ -12,6 +12,11 @@ code = """
       (apply f 5))))
 """
 
+# example from cegis.py:
+# (apply (lambda (a b) (let x 5
+#   (apply (let x 0
+#   (lambda (y) (* a x))) 5))) 1 0)
+
 ast = parse(code)
 static_res = StaticScopeExecutor().execute(ast)
 # Static: f captured x=10. Result: 10 + 5 = 15
