@@ -185,10 +185,51 @@ def assert_well_scoped(node, scope: set):
             raise AssertionError(f"unexpected node {type(node).__name__}")
 
 
+def contains_lambda(node) -> bool:
+    match node:
+        case Int() | Var():
+            return False
+        case Let():
+            return contains_lambda(node.value) or contains_lambda(node.body)
+        case BinOp():
+            return contains_lambda(node.left) or contains_lambda(node.right)
+        case Lambda():
+            return True
+        case Apply():
+            return contains_lambda(node.func) or any(contains_lambda(a) for a in node.args)
+        case _:
+            raise AssertionError(f"unexpected node {type(node).__name__}")
+
+
+class ScopingPropertyTests(unittest.TestCase):
+    """Meta-theorems about when static and dynamic scope must agree."""
+
+    def test_no_lambda_implies_agreement(self):
+        # Without any way to close over variables, we should never see divergence
+        gen = gen_val(5, ["a", "b"])
+        checked = 0
+        for _ in range(5000):
+            try:
+                node = next(gen)
+            except StopIteration:
+                break
+            if contains_lambda(node):
+                continue
+            s_val = static(node)
+            d_val = dynamic(node)
+            self.assertTrue(
+                z3_eq(s_val, d_val),
+                f"lambda-free program disagreed: static={s_val}, dynamic={d_val}",
+            )
+            checked += 1
+        # Make sure the filter didn't reject everything.
+        self.assertGreater(checked, 0, "no lambda-free samples drawn; filter too strict")
+
+
 class GeneratorTests(unittest.TestCase):
     """Property tests sampling from the (random, infinite) gen_val stream."""
 
-    SAMPLES = 200
+    SAMPLES = 2000
 
     def _sample(self, depth, available_vars):
         gen = gen_val(depth, list(available_vars))
@@ -205,13 +246,13 @@ class GeneratorTests(unittest.TestCase):
     def test_all_samples_are_well_scoped(self):
         # Top-level scope is whatever the synthesizer passes in. CEGIS uses ["a","b"].
         available = {"a", "b"}
-        for node in self._sample(depth=3, available_vars=available):
+        for node in self._sample(depth=5, available_vars=available):
             assert_well_scoped(node, available)
 
     def test_depth_bounds_height(self):
         # Each recursion step adds at most one Lambda/Let/Apply/BinOp wrapper
         # plus a leaf. Height grows roughly linearly in `depth`; cap generously.
-        depth = 3
+        depth = 5
         max_expected_height = 2 * depth + 2
         for node in self._sample(depth=depth, available_vars={"a", "b"}):
             h = ast_height(node)
