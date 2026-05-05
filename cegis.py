@@ -50,10 +50,10 @@ def gen_val(depth, available_vars):
     #         for right in leaves:
     #             yield BinOp(left, op, right)
 
-    get_leaf_gen = lambda: gen_leaf(available_vars)
+    def get_leaf_gen(): return gen_leaf(available_vars)
     sub_fun_gen = gen_fun(depth - 1, available_vars)
     sub_val_gen = gen_val(depth - 1, available_vars + ["x"])
-    get_op_gen = lambda: random.sample(["+", "-", "*", "/"], k=4)
+    def get_op_gen(): return random.sample(["+", "-", "*", "/"], k=4)
 
     let_gen = (Let("x", val, body) for body in sub_val_gen for val in get_leaf_gen())
     apply_gen = (Apply(func, [arg]) for func in sub_fun_gen for arg in get_leaf_gen())
@@ -82,7 +82,7 @@ def gen_fun(depth, available_vars):
     #     for body in sub_fun_x:
     #         yield Let("x", val, body)
 
-    get_leaf_gen = lambda: gen_leaf(available_vars)
+    def get_leaf_gen(): return gen_leaf(available_vars)
     sub_val_y_gen = gen_val(depth - 1, available_vars + ["y"])
     sub_fun_x_gen = gen_fun(depth - 1, available_vars + ["x"])
 
@@ -116,8 +116,18 @@ def check_candidate(generated_body):
             return None
         if not z3.is_expr(static_val) or not z3.is_expr(dyn_val):
             return None
-        if free_vars(static_val) != free_vars(dyn_val):
-            return None  # degenerate: one has an unbound variable the other doesn't
+        inputs = {"input_a", "input_b"}
+        static_fv = free_vars(static_val)
+        dyn_fv = free_vars(dyn_val)
+        # Degenerate if a non-input free var appears on only one side
+        # (input vars legitimately resolve to different parameters under
+        # static vs dynamic scope, so asymmetry there is real, not degenerate).
+        if (static_fv - inputs) != (dyn_fv - inputs):
+            return None
+        # Require both inputs to actually influence the divergence,
+        # otherwise the counter-example values come back as None.
+        if not inputs <= (static_fv | dyn_fv):
+            return None
 
         solver = z3.Solver()
         solver.add(static_val != dyn_val)
@@ -137,7 +147,7 @@ def check_candidate(generated_body):
 
 
 def synthesize_diverging_program():
-    for depth in range(6, 7):
+    for depth in range(10, 15):
         print(f"Searching tree depth {depth}...")
 
         count = 0
