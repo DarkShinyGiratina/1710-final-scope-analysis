@@ -4,8 +4,11 @@ from static_scope import StaticScopeExecutor
 from dyn_scope import DynamicScopeExecutor
 from multiprocessing import Pool, cpu_count
 import random
-import subprocess 
-import tempfile 
+import subprocess
+import tempfile
+
+random.seed(42)
+
 
 def exhaustive_random_yield(generators):
     while True:
@@ -51,10 +54,14 @@ def gen_val(depth, available_vars):
     #         for right in leaves:
     #             yield BinOp(left, op, right)
 
-    def get_leaf_gen(): return gen_leaf(available_vars)
+    def get_leaf_gen():
+        return gen_leaf(available_vars)
+
     sub_fun_gen = gen_fun(depth - 1, available_vars)
     sub_val_gen = gen_val(depth - 1, available_vars + ["x"])
-    def get_op_gen(): return random.sample(["+", "-", "*", "/"], k=4)
+
+    def get_op_gen():
+        return random.sample(["+", "-", "*", "/"], k=4)
 
     let_gen = (Let("x", val, body) for body in sub_val_gen for val in get_leaf_gen())
     apply_gen = (Apply(func, [arg]) for func in sub_fun_gen for arg in get_leaf_gen())
@@ -65,7 +72,30 @@ def gen_val(depth, available_vars):
         for right in get_leaf_gen()
     )
 
-    yield from exhaustive_random_yield([let_gen, apply_gen, binop_gen])
+    # If-expression generator: condition is a CondOp, branches are smaller values
+    # Both branches must use the same available_vars—no new variables introduced
+    def get_sub_val_gen():
+        return gen_val(depth - 1, available_vars)
+
+    def get_cond_op_gen():
+        # Use Racket-friendly relational operators
+        return random.sample(["=", "<", ">", "<=", ">="], k=5)
+
+    cond_gen = (
+        CondOp(left, op, right)
+        for op in get_cond_op_gen()
+        for left in get_leaf_gen()
+        for right in get_leaf_gen()
+    )
+
+    if_gen = (
+        If(condition, then_branch, else_branch)
+        for condition in cond_gen
+        for then_branch in get_sub_val_gen()
+        for else_branch in get_sub_val_gen()
+    )
+
+    yield from exhaustive_random_yield([let_gen, apply_gen, binop_gen, if_gen])
 
 
 def gen_fun(depth, available_vars):
@@ -83,7 +113,9 @@ def gen_fun(depth, available_vars):
     #     for body in sub_fun_x:
     #         yield Let("x", val, body)
 
-    def get_leaf_gen(): return gen_leaf(available_vars)
+    def get_leaf_gen():
+        return gen_leaf(available_vars)
+
     sub_val_y_gen = gen_val(depth - 1, available_vars + ["y"])
     sub_fun_x_gen = gen_fun(depth - 1, available_vars + ["x"])
 
@@ -117,11 +149,11 @@ def check_candidate(generated_body):
             return None
         if not z3.is_expr(static_val) or not z3.is_expr(dyn_val):
             return None
-        
+
         inputs = {"input_a", "input_b"}
         static_fv = free_vars(static_val)
         dyn_fv = free_vars(dyn_val)
-        
+
         if (static_fv - inputs) != (dyn_fv - inputs):
             return None
         if not inputs <= (static_fv | dyn_fv):
@@ -129,23 +161,23 @@ def check_candidate(generated_body):
 
         solver = z3.Solver()
         solver.add(static_val != dyn_val)
-        
+
         # Force inputs into the model to avoid None values
         input_a_z3 = z3.Int("input_a")
         input_b_z3 = z3.Int("input_b")
         solver.add(input_a_z3 == input_a_z3)  # Dummy constraint
         solver.add(input_b_z3 == input_b_z3)  # Dummy constraint
-        
+
         if solver.check() == z3.sat:
             model = solver.model()
             # Use model_completion=True to get concrete values
             input_a_val = model.eval(input_a_z3, model_completion=True)
             input_b_val = model.eval(input_b_z3, model_completion=True)
-            
+
             # Safety check: reject if we still got None
             if input_a_val is None or input_b_val is None:
                 return None
-            
+
             return {
                 "program": pretty_print(program, toplevel_name="f"),
                 "static": str(static_val),
@@ -158,35 +190,34 @@ def check_candidate(generated_body):
 
     return None
 
+
 def run_in_racket(lang, program_str, input_a, input_b):
     """
     Creates a temporary Racket file, executes it, and automatically cleans it up.
     """
     full_code = f"#lang {lang}\n{program_str}\n(f {input_a} {input_b})\n"
-    
+
     # Create a temporary file that automatically deletes itself when closed
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.rkt', delete=True) as temp_file:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".rkt", delete=True) as temp_file:
         temp_file.write(full_code)
-        temp_file.flush() # Force write to disk so Racket can see it
-        
+        temp_file.flush()  # Force write to disk so Racket can see it
+
         try:
             # Run the file directly: racket /tmp/random_name.rkt
             result = subprocess.run(
-                ["racket", temp_file.name],
-                capture_output=True,
-                text=True,
-                timeout=5
+                ["racket", temp_file.name], capture_output=True, text=True, timeout=5
             )
-            
+
             if result.returncode != 0:
                 return f"Racket Error: {result.stderr.strip()}"
-                
+
             return result.stdout.strip()
-            
+
         except subprocess.TimeoutExpired:
             return "Error: Timeout"
         except Exception as e:
             return f"System Error: {str(e)}"
+
 
 def synthesize_diverging_program():
     for depth in range(10, 15):
@@ -202,6 +233,11 @@ def synthesize_diverging_program():
                     print(f"  ... {count} candidates checked", flush=True)
 
                 if result is not None:
+                    if "if" not in result["program"]:
+                        print(
+                            f"  Skipping candidate #{count} without 'if': {result['program']}"
+                        )
+                        continue
                     pool.terminate()
                     print(f"\n--- DIVERGENCE FOUND! (after {count} candidates) ---")
                     print(f"Synthesized program:\n{result['program']}")
@@ -212,17 +248,17 @@ def synthesize_diverging_program():
                     )
                     print("Real execution results:")
                     static_racket = run_in_racket(
-                        "smol/hof", 
-                        result['program'], 
-                        result['input_a'], 
-                        result['input_b']
+                        "smol/hof",
+                        result["program"],
+                        result["input_a"],
+                        result["input_b"],
                     )
-                    
+
                     dyn_racket = run_in_racket(
-                        "smol/dyn-scope-is-bad", 
-                        result['program'], 
-                        result['input_a'], 
-                        result['input_b']
+                        "smol/dyn-scope-is-bad",
+                        result["program"],
+                        result["input_a"],
+                        result["input_b"],
                     )
                     print(f"Static execution: {static_racket}")
                     print(f"Dynamic execution: {dyn_racket}")

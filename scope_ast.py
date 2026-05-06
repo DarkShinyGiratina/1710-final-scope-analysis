@@ -24,13 +24,22 @@ class Let(ASTNode):
 
 
 class If(ASTNode):
-    def __init__(self, condition: ASTNode, then_branch: ASTNode, else_branch: ASTNode) -> None:
+    def __init__(
+        self, condition: ASTNode, then_branch: ASTNode, else_branch: ASTNode
+    ) -> None:
         self.condition: ASTNode = condition
         self.then_branch: ASTNode = then_branch
         self.else_branch: ASTNode = else_branch
 
 
 class BinOp(ASTNode):
+    def __init__(self, left: ASTNode, operator: str, right: ASTNode) -> None:
+        self.left: ASTNode = left
+        self.operator: str = operator
+        self.right: ASTNode = right
+
+
+class CondOp(ASTNode):
     def __init__(self, left: ASTNode, operator: str, right: ASTNode) -> None:
         self.left: ASTNode = left
         self.operator: str = operator
@@ -48,6 +57,7 @@ class Apply(ASTNode):
         self.func = func
         self.args = args
 
+
 def pretty_print(node: ASTNode, toplevel_name: str | None = None) -> str:
     match node:
         case Int():
@@ -60,10 +70,12 @@ def pretty_print(node: ASTNode, toplevel_name: str | None = None) -> str:
             return f"(let ([{node.name} {pretty_print(node.value)}])\n  {pretty_print(node.body)})"
         case If():
             return f"(if {pretty_print(node.condition)}\n  {pretty_print(node.then_branch)}\n  {pretty_print(node.else_branch)})"
+        case CondOp():
+            return f"({node.operator} {pretty_print(node.left)} {pretty_print(node.right)})"
         case Lambda():
             params = " ".join(node.params)
             body_str = pretty_print(node.body)
-            
+
             # use deffun for top-level lambdas
             if toplevel_name is not None:
                 return f"(deffun ({toplevel_name} {params})\n {body_str})"

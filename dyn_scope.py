@@ -29,10 +29,37 @@ class DynamicScopeExecutor:
 
             case If():
                 condition = self.execute(node.condition)
-                return z3.If(condition != 0, self.execute(node.then_branch), self.execute(node.else_branch))
+                # normalize to Bool if needed
+                if z3.is_bool(condition):
+                    cond_expr = condition
+                else:
+                    cond_expr = condition != 0
+                return z3.If(
+                    cond_expr,
+                    self.execute(node.then_branch),
+                    self.execute(node.else_branch),
+                )
+
+            case CondOp():
+                left = self.execute(node.left)
+                right = self.execute(node.right)
+                op = node.operator
+                if op in ("=", "=="):
+                    return left == right
+                if op == "<":
+                    return left < right
+                if op == ">":
+                    return left > right
+                if op == "<=":
+                    return left <= right
+                if op == ">=":
+                    return left >= right
+                raise ValueError(f"Unknown conditional operator {op}")
 
             case BinOp():
-                return self._evaluate_binop(node.operator, self.execute(node.left), self.execute(node.right))
+                return self._evaluate_binop(
+                    node.operator, self.execute(node.left), self.execute(node.right)
+                )
 
             case Lambda():
                 return node  # Just return the AST; no environment captured
@@ -56,13 +83,15 @@ class DynamicScopeExecutor:
 
     def _evaluate_binop(self, operator, left, right):
         if not z3.is_expr(left) or not z3.is_expr(right):
-            raise TypeError(f"BinOp operands must be z3 expressions, got {type(left)}, {type(right)}")
-        if operator == '+':
+            raise TypeError(
+                f"BinOp operands must be z3 expressions, got {type(left)}, {type(right)}"
+            )
+        if operator == "+":
             return left + right
-        if operator == '-':
+        if operator == "-":
             return left - right
-        if operator == '*':
+        if operator == "*":
             return left * right
-        if operator == '/':
+        if operator == "/":
             return left / right
         raise ValueError(f"Unknown operator {operator}")

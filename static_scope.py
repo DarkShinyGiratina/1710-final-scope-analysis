@@ -35,10 +35,31 @@ class StaticScopeExecutor:
 
             case If():
                 condition = self.execute(node.condition)
+                condition = self.execute(node.condition)
                 then_val = self.execute(node.then_branch)
                 else_val = self.execute(node.else_branch)
-                # Returns a symbolic conditional expression
-                return z3.If(condition != 0, then_val, else_val)
+                # condition may be a Bool or an Int; normalize to Bool
+                if z3.is_bool(condition):
+                    cond_expr = condition
+                else:
+                    cond_expr = condition != 0
+                return z3.If(cond_expr, then_val, else_val)
+
+            case CondOp():
+                left = self.execute(node.left)
+                right = self.execute(node.right)
+                op = node.operator
+                if op in ("=", "=="):
+                    return left == right
+                if op == "<":
+                    return left < right
+                if op == ">":
+                    return left > right
+                if op == "<=":
+                    return left <= right
+                if op == ">=":
+                    return left >= right
+                raise ValueError(f"Unknown conditional operator {op}")
 
             case BinOp():
                 left = self.execute(node.left)
@@ -67,13 +88,15 @@ class StaticScopeExecutor:
 
     def _evaluate_binop(self, operator, left, right):
         if not z3.is_expr(left) or not z3.is_expr(right):
-            raise TypeError(f"BinOp operands must be z3 expressions, got {type(left)}, {type(right)}")
-        if operator == '+':
+            raise TypeError(
+                f"BinOp operands must be z3 expressions, got {type(left)}, {type(right)}"
+            )
+        if operator == "+":
             return left + right
-        if operator == '-':
+        if operator == "-":
             return left - right
-        if operator == '*':
+        if operator == "*":
             return left * right
-        if operator == '/':
+        if operator == "/":
             return left / right
         raise ValueError(f"Unknown operator {operator}")
