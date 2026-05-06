@@ -4,7 +4,8 @@ from static_scope import StaticScopeExecutor
 from dyn_scope import DynamicScopeExecutor
 from multiprocessing import Pool, cpu_count
 import random
-
+import subprocess 
+import tempfile 
 
 def exhaustive_random_yield(generators):
     while True:
@@ -157,6 +158,36 @@ def check_candidate(generated_body):
 
     return None
 
+def run_in_racket(lang, program_str, input_a, input_b):
+    """
+    Creates a temporary Racket file, executes it, and automatically cleans it up.
+    """
+    full_code = f"#lang {lang}\n{program_str}\n(f {input_a} {input_b})\n"
+    
+    # Create a temporary file that automatically deletes itself when closed
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.rkt', delete=True) as temp_file:
+        temp_file.write(full_code)
+        temp_file.flush() # Force write to disk so Racket can see it
+        
+        try:
+            # Run the file directly: racket /tmp/random_name.rkt
+            result = subprocess.run(
+                ["racket", temp_file.name],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if result.returncode != 0:
+                return f"Racket Error: {result.stderr.strip()}"
+                
+            return result.stdout.strip()
+            
+        except subprocess.TimeoutExpired:
+            return "Error: Timeout"
+        except Exception as e:
+            return f"System Error: {str(e)}"
+
 def synthesize_diverging_program():
     for depth in range(10, 15):
         print(f"Searching tree depth {depth}...")
@@ -179,6 +210,22 @@ def synthesize_diverging_program():
                     print(
                         f"Counter-example inputs: a={result['input_a']}, b={result['input_b']}"
                     )
+                    print("Real execution results:")
+                    static_racket = run_in_racket(
+                        "smol/hof", 
+                        result['program'], 
+                        result['input_a'], 
+                        result['input_b']
+                    )
+                    
+                    dyn_racket = run_in_racket(
+                        "smol/dyn-scope-is-bad", 
+                        result['program'], 
+                        result['input_a'], 
+                        result['input_b']
+                    )
+                    print(f"Static execution: {static_racket}")
+                    print(f"Dynamic execution: {dyn_racket}")
                     return
 
         print(f"  Depth {depth} exhausted: {count} candidates, no divergence found")

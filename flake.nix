@@ -1,5 +1,5 @@
 {
-  description = "CSCI 1710 Flake";
+  description = "CSCI 1710 Final Flake";
 
   inputs = {
     nixpkgs.url = "nixpkgs/nixos-unstable";
@@ -26,11 +26,12 @@
             python313
             python313Packages.z3-solver
             pyright
+            racket
           ];
 
           # Make zsh the shell
           shellHook = ''
-            SHELL="$(which zsh)"
+            SHELL='$(which zsh)'
             zsh
           '';
         };
