@@ -116,35 +116,46 @@ def check_candidate(generated_body):
             return None
         if not z3.is_expr(static_val) or not z3.is_expr(dyn_val):
             return None
+        
         inputs = {"input_a", "input_b"}
         static_fv = free_vars(static_val)
         dyn_fv = free_vars(dyn_val)
-        # Degenerate if a non-input free var appears on only one side
-        # (input vars legitimately resolve to different parameters under
-        # static vs dynamic scope, so asymmetry there is real, not degenerate).
+        
         if (static_fv - inputs) != (dyn_fv - inputs):
             return None
-        # Require both inputs to actually influence the divergence,
-        # otherwise the counter-example values come back as None.
         if not inputs <= (static_fv | dyn_fv):
             return None
 
         solver = z3.Solver()
         solver.add(static_val != dyn_val)
+        
+        # Force inputs into the model to avoid None values
+        input_a_z3 = z3.Int("input_a")
+        input_b_z3 = z3.Int("input_b")
+        solver.add(input_a_z3 == input_a_z3)  # Dummy constraint
+        solver.add(input_b_z3 == input_b_z3)  # Dummy constraint
+        
         if solver.check() == z3.sat:
             model = solver.model()
+            # Use model_completion=True to get concrete values
+            input_a_val = model.eval(input_a_z3, model_completion=True)
+            input_b_val = model.eval(input_b_z3, model_completion=True)
+            
+            # Safety check: reject if we still got None
+            if input_a_val is None or input_b_val is None:
+                return None
+            
             return {
                 "program": pretty_print(program, toplevel_name="f"),
                 "static": str(static_val),
                 "dynamic": str(dyn_val),
-                "input_a": str(model[z3.Int("input_a")]),
-                "input_b": str(model[z3.Int("input_b")]),
+                "input_a": str(input_a_val),
+                "input_b": str(input_b_val),
             }
     except (TypeError, NameError):
         return None
 
     return None
-
 
 def synthesize_diverging_program():
     for depth in range(10, 15):
