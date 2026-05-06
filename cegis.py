@@ -134,7 +134,7 @@ def check_candidate(generated_body):
         if solver.check() == z3.sat:
             model = solver.model()
             return {
-                "program": pretty_print(program),
+                "program": pretty_print(program, toplevel_name="f"),
                 "static": str(static_val),
                 "dynamic": str(dyn_val),
                 "input_a": str(model[z3.Int("input_a")]),

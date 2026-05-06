@@ -136,7 +136,7 @@ def parse(src: str) -> ASTNode:
     return parser.parse()
 
 
-def pretty_print(node: ASTNode) -> str:
+def pretty_print(node: ASTNode, toplevel_name: str | None = None) -> str:
     match node:
         case Int():
             return str(node.value)
@@ -145,14 +145,20 @@ def pretty_print(node: ASTNode) -> str:
         case BinOp():
             return f"({node.operator} {pretty_print(node.left)} {pretty_print(node.right)})"
         case Let():
-            return f"(let {node.name} {pretty_print(node.value)}\n  {pretty_print(node.body)})"
+            return f"(let ([{node.name} {pretty_print(node.value)}])\n  {pretty_print(node.body)})"
         case If():
             return f"(if {pretty_print(node.condition)}\n  {pretty_print(node.then_branch)}\n  {pretty_print(node.else_branch)})"
         case Lambda():
             params = " ".join(node.params)
-            return f"(lambda ({params}) {pretty_print(node.body)})"
+            body_str = pretty_print(node.body)
+            
+            # use deffun for top-level lambdas
+            if toplevel_name is not None:
+                return f"(deffun ({toplevel_name} {params})\n {body_str})"
+            else:
+                return f"(lambda ({params}) {body_str})"
         case Apply():
             args = " ".join(pretty_print(a) for a in node.args)
-            return f"(apply {pretty_print(node.func)} {args})"
+            return f"({pretty_print(node.func)} {args})"
         case _:
             return f"<unknown node: {type(node).__name__}>"
